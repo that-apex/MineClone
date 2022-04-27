@@ -17,6 +17,8 @@ add_library(MineClone_Client STATIC
         src/GFX/Game.cpp
         src/GFX/Graphics.cpp
         src/GFX/Shader.cpp
+        src/GFX/SwapChain.cpp
+        src/GFX/VulkanContext.cpp
         src/Client.cpp
 )
 

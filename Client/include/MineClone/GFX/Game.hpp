@@ -2,7 +2,7 @@
 #ifndef MINECLONE_CLIENT_GFX_GAME_HPP_
 #define MINECLONE_CLIENT_GFX_GAME_HPP_
 
-#include "Graphics.hpp"
+#include "VulkanContext.hpp"
 
 namespace MineClone
 {
