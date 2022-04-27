@@ -104,6 +104,8 @@ void VulkanContext::Render()
 
 void VulkanContext::CreateInstance()
 {
+    const std::vector<const char *> optionalValidationLayers = {"VK_LAYER_LUNARG_monitor"};
+
     // required extensions
     std::vector<const char *> requiredExtensions{};
 
@@ -120,6 +122,15 @@ void VulkanContext::CreateInstance()
                              [required](const VkLayerProperties &layer) { return std::strcmp(layer.layerName, required) == 0; }))
             {
                 throw GraphicsException("Missing validation layer: "s + required);
+            }
+        }
+
+        for (const char *optional : optionalValidationLayers)
+        {
+            if (std::any_of(begin(validationLayers), end(validationLayers),
+                            [optional](const VkLayerProperties &layer) { return std::strcmp(layer.layerName, optional) == 0; }))
+            {
+                m_requiredValidationLayers.emplace_back(optional);
             }
         }
 
