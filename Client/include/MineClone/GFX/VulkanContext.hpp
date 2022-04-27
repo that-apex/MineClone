@@ -68,6 +68,8 @@ class VulkanContext
 
     void Destroy();
 
+    void RequireRecreateSwapChain();
+
     [[nodiscard]] GLFWwindow *GetWindow() noexcept;
     [[nodiscard]] std::vector<VkExtensionProperties> &GetExtensions() noexcept;
     [[nodiscard]] VkInstance GetInstance() noexcept;
@@ -93,6 +95,9 @@ class VulkanContext
     void RecordCommandBuffer(VkCommandBuffer commandBuffer, uint32_t imageIndex);
     void CreateSyncObjects();
 
+    bool HandleDrawResult(VkResult result);
+    void RecreateSwapChain();
+
   private:
     GLFWwindow *m_window{nullptr};
     bool m_requireValidationLayers{false};
@@ -112,6 +117,7 @@ class VulkanContext
     std::array<InFlightFrameData, MAX_FRAMES_IN_FLIGHT> m_inFlightFrameData;
 
     size_t m_currentFrame{0};
+    bool m_requireRecreateSwapChain{false};
 }; // class VulkanInitializer
 
 } // namespace MineClone

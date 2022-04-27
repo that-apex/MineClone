@@ -22,6 +22,8 @@ class Game
 
     void Destroy();
 
+    virtual void OnResize(size_t newWidth, size_t newHeight);
+
     [[nodiscard]] size_t GetWidth() const noexcept;
     [[nodiscard]] size_t GetHeight() const noexcept;
 

@@ -30,6 +30,16 @@ void Game::GameLoop()
     }
 }
 
+namespace
+{
+
+void GlResizeCallback(GLFWwindow *window, int width, int height)
+{
+    static_cast<Game *>(glfwGetWindowUserPointer(window))->OnResize(static_cast<size_t>(width), static_cast<size_t>(height));
+}
+
+} // namespace
+
 void Game::Initialize()
 {
     // glfw init
@@ -40,17 +50,17 @@ void Game::Initialize()
 
     // create window
     glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
-    glfwWindowHint(GLFW_RESIZABLE, GLFW_FALSE);
+    glfwWindowHint(GLFW_RESIZABLE, GLFW_TRUE);
     m_glWindow = glfwCreateWindow(static_cast<int>(m_width), static_cast<int>(m_height), m_title.c_str(), nullptr, nullptr);
 
     if (!m_glWindow)
         throw Exception("glfwCreateWindow failed");
 
     glfwSetWindowUserPointer(m_glWindow, static_cast<void *>(this));
+    glfwSetFramebufferSizeCallback(m_glWindow, &GlResizeCallback);
 
     // init vulkan context
     m_vulkanContext.Initialize(m_glWindow);
-
 }
 
 void Game::Destroy()
@@ -74,6 +84,20 @@ void Game::Destroy()
         glfwTerminate();
         m_hasGlfw = false;
     }
+}
+
+void Game::OnResize(size_t newWidth, size_t newHeight)
+{
+    if (newWidth <= 0 || newHeight <= 0)
+    {
+        glfwSetWindowSize(m_glWindow, std::max(1, static_cast<int>(m_width)), std::max(1, static_cast<int>(m_height)));
+        return;
+    }
+
+    m_width = newWidth;
+    m_height = newHeight;
+
+    m_vulkanContext.RequireRecreateSwapChain();
 }
 
 size_t Game::GetWidth() const noexcept

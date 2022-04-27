@@ -43,13 +43,14 @@ void SwapChain::Create(VulkanContext *context)
     CreateFramebuffers();
 }
 
+void SwapChain::Recreate()
+{
+    Create(m_context);
+}
+
 void SwapChain::CreateSwapChain()
 {
-    const SwapChainSupportDetails& supportDetails = m_context->GetSwapChainSupportDetails();
-
-    // pick format and present modes
-    m_swapChainFormat = FirstOrDefault(supportDetails.Formats, IsFormatBest, supportDetails.Formats[0]);
-    m_swapChainPresentMode = FirstOrDefault(supportDetails.PresentModes, IsPresentModeBest, VK_PRESENT_MODE_FIFO_KHR);
+    const SwapChainSupportDetails &supportDetails = m_context->GetSwapChainSupportDetails();
 
     // create swap chain extent
     const VkSurfaceCapabilitiesKHR &cap = supportDetails.Capabilities;
@@ -59,6 +60,13 @@ void SwapChain::CreateSwapChain()
 
     m_swapChainExtent.width = std::clamp<uint32_t>(width, cap.minImageExtent.width, cap.maxImageExtent.width);
     m_swapChainExtent.height = std::clamp<uint32_t>(height, cap.minImageExtent.height, cap.maxImageExtent.height);
+
+    if (width == 0 || height == 0)
+        throw GraphicsException("window's width or height is 0");
+
+    // pick format and present modes
+    m_swapChainFormat = FirstOrDefault(supportDetails.Formats, IsFormatBest, supportDetails.Formats[0]);
+    m_swapChainPresentMode = FirstOrDefault(supportDetails.PresentModes, IsPresentModeBest, VK_PRESENT_MODE_FIFO_KHR);
 
     // create the swapchain
     VkSwapchainCreateInfoKHR createInfo{};
@@ -166,11 +174,14 @@ void SwapChain::CreateGraphicsPipeline()
 {
     ShaderCompiler compiler;
 
-    const CompiledShader compiledFragShader = compiler.Compile(RES_FRAGMENT_SHADER, "fragment.frag", shaderc_fragment_shader);
-    const CompiledShader compiledVertShader = compiler.Compile(RES_VERTEX_SHADER, "vertex.vert", shaderc_vertex_shader);
+    if (!m_compiledFragShader)
+        m_compiledFragShader = compiler.Compile(RES_FRAGMENT_SHADER, "fragment.frag", shaderc_fragment_shader);
 
-    const ShaderModule fragShader{m_context->GetDevice(), compiledFragShader};
-    const ShaderModule vertShader{m_context->GetDevice(), compiledVertShader};
+    if (!m_compiledVertShader)
+        m_compiledVertShader = compiler.Compile(RES_VERTEX_SHADER, "vertex.vert", shaderc_vertex_shader);
+
+    const ShaderModule fragShader{m_context->GetDevice(), *m_compiledFragShader};
+    const ShaderModule vertShader{m_context->GetDevice(), *m_compiledVertShader};
 
     const std::array<VkPipelineShaderStageCreateInfo, 2> vertShaderStageInfo = {fragShader.CreateInfo(), vertShader.CreateInfo()};
 
@@ -285,7 +296,6 @@ void SwapChain::CreateFramebuffers()
             throw GraphicsException("failed to create a framebuffer");
     }
 }
-
 
 void SwapChain::Destroy()
 {

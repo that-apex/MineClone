@@ -3,6 +3,8 @@
 #define MINECLONE_CLIENT_GFX_SWAPCHAIN_HPP_
 
 #include "Graphics.hpp"
+#include "Shader.hpp"
+#include <optional>
 
 namespace MineClone
 {
@@ -33,6 +35,8 @@ class SwapChain
 
     void Create(VulkanContext *context);
 
+    void Recreate();
+
     void Destroy();
 
     [[nodiscard]] VkSurfaceFormatKHR &GetSwapChainFormat() noexcept;
@@ -53,6 +57,8 @@ class SwapChain
     void CreateFramebuffers();
 
   private:
+    std::optional<CompiledShader> m_compiledFragShader{};
+    std::optional<CompiledShader> m_compiledVertShader{};
     VulkanContext *m_context{nullptr};
     VkSurfaceFormatKHR m_swapChainFormat{};
     VkPresentModeKHR m_swapChainPresentMode{};

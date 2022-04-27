@@ -86,15 +86,25 @@ void VulkanContext::Initialize(GLFWwindow *window)
 
 void VulkanContext::Render()
 {
+    if (m_requireRecreateSwapChain)
+    {
+        RecreateSwapChain();
+        return;
+    }
+
     InFlightFrameData &frameData = m_inFlightFrameData[m_currentFrame];
 
     // wait for previous frame
     vkWaitForFences(m_device, 1, &frameData.InFlightFence, VK_TRUE, std::numeric_limits<uint64_t>::max());
-    vkResetFences(m_device, 1, &frameData.InFlightFence);
 
     uint32_t imageIndex;
-    vkAcquireNextImageKHR(m_device, m_swapChain.GetSwapChain(), std::numeric_limits<uint64_t>::max(), frameData.ImageAvailableSemaphore,
-                          VK_NULL_HANDLE, &imageIndex);
+    if (!HandleDrawResult(vkAcquireNextImageKHR(m_device, m_swapChain.GetSwapChain(), std::numeric_limits<uint64_t>::max(),
+                                                frameData.ImageAvailableSemaphore, VK_NULL_HANDLE, &imageIndex)))
+    {
+        return;
+    }
+
+    vkResetFences(m_device, 1, &frameData.InFlightFence);
 
     // record framebuffer
     vkResetCommandBuffer(frameData.CommandBuffer, 0);
@@ -124,10 +134,15 @@ void VulkanContext::Render()
     presentInfo.pSwapchains = &swapChain;
     presentInfo.pImageIndices = &imageIndex;
 
-    if (vkQueuePresentKHR(m_presentQueue, &presentInfo) != VK_SUCCESS)
-        throw std::runtime_error("failed to present swap chain image!");
+    if (!HandleDrawResult(vkQueuePresentKHR(m_presentQueue, &presentInfo)))
+        return;
 
     m_currentFrame = (m_currentFrame + 1) % MAX_FRAMES_IN_FLIGHT;
+}
+
+void VulkanContext::RequireRecreateSwapChain()
+{
+    m_requireRecreateSwapChain = true;
 }
 
 void VulkanContext::CreateInstance()
@@ -531,6 +546,40 @@ void VulkanContext::Destroy()
     {
         vkDestroyInstance(m_instance, nullptr);
         m_instance = VK_NULL_HANDLE;
+    }
+}
+
+void VulkanContext::RecreateSwapChain()
+{
+    m_requireRecreateSwapChain = false;
+
+    // wait if the window is minimized
+    int width, height;
+    glfwGetFramebufferSize(m_window, &width, &height);
+
+    while (width == 0 || height == 0)
+    {
+        glfwGetFramebufferSize(m_window, &width, &height);
+        glfwWaitEvents();
+    }
+
+    vkDeviceWaitIdle(m_device);
+    m_swapChainSupportDetails = QuerySwapChainSupport(m_physicalDevice, m_surface);
+    m_swapChain.Recreate();
+}
+
+bool VulkanContext::HandleDrawResult(VkResult result)
+{
+    switch (result)
+    {
+    case VK_SUCCESS:
+        return true;
+    case VK_SUBOPTIMAL_KHR:
+    case VK_ERROR_OUT_OF_DATE_KHR:
+        RecreateSwapChain();
+        return false;
+    default:
+        throw std::runtime_error("failed to present swap chain image!");
     }
 }
 
