@@ -31,6 +31,53 @@ template <typename T, typename Func, typename... Args> std::vector<T> VulkanEnum
 
 } // namespace
 
+InFlightFrameData::~InFlightFrameData()
+{
+    Destroy();
+}
+
+
+void InFlightFrameData::Initialize(VulkanContext *context)
+{
+    Context = context;
+}
+
+void InFlightFrameData::Destroy()
+{
+    if (Context == nullptr)
+        return;
+
+    if (InFlightFence != VK_NULL_HANDLE)
+    {
+        vkDestroyFence(Context->GetDevice(), InFlightFence, nullptr);
+        InFlightFence = VK_NULL_HANDLE;
+    }
+
+    if (RenderFinishedSemaphore != VK_NULL_HANDLE)
+    {
+        vkDestroySemaphore(Context->GetDevice(), RenderFinishedSemaphore, nullptr);
+        RenderFinishedSemaphore = VK_NULL_HANDLE;
+    }
+
+    if (ImageAvailableSemaphore != VK_NULL_HANDLE)
+    {
+        vkDestroySemaphore(Context->GetDevice(), ImageAvailableSemaphore, nullptr);
+        ImageAvailableSemaphore = VK_NULL_HANDLE;
+    }
+
+    if (CommandBuffer != VK_NULL_HANDLE)
+    {
+        vkFreeCommandBuffers(Context->GetDevice(), Context->GetCommandPool(), 1, &CommandBuffer);
+        CommandBuffer = VK_NULL_HANDLE;
+    }
+}
+
+VulkanContext::VulkanContext()
+{
+    for (InFlightFrameData &frameData : m_inFlightFrameData)
+        frameData.Initialize(this);
+}
+
 VulkanContext::~VulkanContext()
 {
     Destroy();
@@ -64,42 +111,46 @@ void VulkanContext::Initialize(GLFWwindow *window)
 
 void VulkanContext::Render()
 {
+    InFlightFrameData &frameData = m_inFlightFrameData[m_currentFrame];
+
     // wait for previous frame
-    vkWaitForFences(m_device, 1, &m_inFlightFence, VK_TRUE, std::numeric_limits<uint64_t>::max());
-    vkResetFences(m_device, 1, &m_inFlightFence);
+    vkWaitForFences(m_device, 1, &frameData.InFlightFence, VK_TRUE, std::numeric_limits<uint64_t>::max());
+    vkResetFences(m_device, 1, &frameData.InFlightFence);
 
     uint32_t imageIndex;
-    vkAcquireNextImageKHR(m_device, m_swapChain, std::numeric_limits<uint64_t>::max(), m_imageAvailableSemaphore, VK_NULL_HANDLE, &imageIndex);
+    vkAcquireNextImageKHR(m_device, m_swapChain, std::numeric_limits<uint64_t>::max(), frameData.ImageAvailableSemaphore, VK_NULL_HANDLE, &imageIndex);
 
     // record framebuffer
-    vkResetCommandBuffer(m_commandBuffer, 0);
-    RecordCommandBuffer(m_commandBuffer, imageIndex);
+    vkResetCommandBuffer(frameData.CommandBuffer, 0);
+    RecordCommandBuffer(frameData.CommandBuffer, imageIndex);
 
     // submit framebuffer
     VkPipelineStageFlags waitStages[] = {VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT};
     VkSubmitInfo submitInfo{};
     submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
     submitInfo.waitSemaphoreCount = 1;
-    submitInfo.pWaitSemaphores = &m_imageAvailableSemaphore;
+    submitInfo.pWaitSemaphores = &frameData.ImageAvailableSemaphore;
     submitInfo.pWaitDstStageMask = waitStages;
     submitInfo.commandBufferCount = 1;
-    submitInfo.pCommandBuffers = &m_commandBuffer;
+    submitInfo.pCommandBuffers = &frameData.CommandBuffer;
     submitInfo.signalSemaphoreCount = 1;
-    submitInfo.pSignalSemaphores = &m_renderFinishedSemaphore;
+    submitInfo.pSignalSemaphores = &frameData.RenderFinishedSemaphore;
 
-    if (vkQueueSubmit(m_graphicsQueue, 1, &submitInfo, m_inFlightFence) != VK_SUCCESS)
+    if (vkQueueSubmit(m_graphicsQueue, 1, &submitInfo, frameData.InFlightFence) != VK_SUCCESS)
         throw std::runtime_error("failed to submit draw command buffer!");
 
     VkPresentInfoKHR presentInfo{};
     presentInfo.sType = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR;
     presentInfo.waitSemaphoreCount = 1;
-    presentInfo.pWaitSemaphores = &m_renderFinishedSemaphore;
+    presentInfo.pWaitSemaphores = &frameData.RenderFinishedSemaphore;
     presentInfo.swapchainCount = 1;
     presentInfo.pSwapchains = &m_swapChain;
     presentInfo.pImageIndices = &imageIndex;
 
     if (vkQueuePresentKHR(m_presentQueue, &presentInfo) != VK_SUCCESS)
         throw std::runtime_error("failed to present swap chain image!");
+
+    m_currentFrame = (m_currentFrame + 1) % MAX_FRAMES_IN_FLIGHT;
 }
 
 void VulkanContext::CreateInstance()
@@ -645,14 +696,22 @@ void VulkanContext::CreateCommandPool()
 
 void VulkanContext::CreateCommandBuffer()
 {
+
     VkCommandBufferAllocateInfo allocInfo{};
     allocInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
     allocInfo.commandPool = m_commandPool;
     allocInfo.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
-    allocInfo.commandBufferCount = 1;
+    allocInfo.commandBufferCount = MAX_FRAMES_IN_FLIGHT;
 
-    if (vkAllocateCommandBuffers(m_device, &allocInfo, &m_commandBuffer) != VK_SUCCESS)
+    std::vector<VkCommandBuffer> buffers;
+    buffers.resize(MAX_FRAMES_IN_FLIGHT);
+
+    if (vkAllocateCommandBuffers(m_device, &allocInfo, buffers.data()) != VK_SUCCESS)
         throw GraphicsException("failed to allocate command buffers!");
+
+
+    for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; i++)
+        m_inFlightFrameData[i].CommandBuffer = buffers[i];
 }
 
 void VulkanContext::RecordCommandBuffer(VkCommandBuffer commandBuffer, uint32_t imageIndex)
@@ -692,11 +751,14 @@ void VulkanContext::CreateSyncObjects()
     fenceInfo.sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO;
     fenceInfo.flags = VK_FENCE_CREATE_SIGNALED_BIT;
 
-    if (vkCreateSemaphore(m_device, &semaphoreInfo, nullptr, &m_imageAvailableSemaphore) != VK_SUCCESS ||
-        vkCreateSemaphore(m_device, &semaphoreInfo, nullptr, &m_renderFinishedSemaphore) != VK_SUCCESS ||
-        vkCreateFence(m_device, &fenceInfo, nullptr, &m_inFlightFence) != VK_SUCCESS)
+    for (InFlightFrameData &data : m_inFlightFrameData)
     {
-        throw GraphicsException("failed to create synchronization objects for a frame!");
+        if (vkCreateSemaphore(m_device, &semaphoreInfo, nullptr, &data.ImageAvailableSemaphore) != VK_SUCCESS ||
+            vkCreateSemaphore(m_device, &semaphoreInfo, nullptr, &data.RenderFinishedSemaphore) != VK_SUCCESS ||
+            vkCreateFence(m_device, &fenceInfo, nullptr, &data.InFlightFence) != VK_SUCCESS)
+        {
+            throw GraphicsException("failed to create synchronization objects for a frame!");
+        }
     }
 }
 
@@ -705,29 +767,8 @@ void VulkanContext::Destroy()
     if (m_device != VK_NULL_HANDLE)
         vkDeviceWaitIdle(m_device);
 
-    if (m_inFlightFence != VK_NULL_HANDLE)
-    {
-        vkDestroyFence(m_device, m_inFlightFence, nullptr);
-        m_inFlightFence = VK_NULL_HANDLE;
-    }
-
-    if (m_renderFinishedSemaphore != VK_NULL_HANDLE)
-    {
-        vkDestroySemaphore(m_device, m_renderFinishedSemaphore, nullptr);
-        m_renderFinishedSemaphore = VK_NULL_HANDLE;
-    }
-
-    if (m_imageAvailableSemaphore != VK_NULL_HANDLE)
-    {
-        vkDestroySemaphore(m_device, m_imageAvailableSemaphore, nullptr);
-        m_imageAvailableSemaphore = VK_NULL_HANDLE;
-    }
-
-    if (m_commandBuffer != VK_NULL_HANDLE)
-    {
-        vkFreeCommandBuffers(m_device, m_commandPool, 1, &m_commandBuffer);
-        m_commandBuffer = VK_NULL_HANDLE;
-    }
+    for (InFlightFrameData &data : m_inFlightFrameData)
+        data.Destroy();
 
     if (m_commandPool != VK_NULL_HANDLE)
     {
@@ -822,6 +863,76 @@ VkDevice VulkanContext::GetDevice() noexcept
 VkQueue VulkanContext::GetGraphicsQueue() noexcept
 {
     return m_graphicsQueue;
+}
+
+VkSurfaceKHR VulkanContext::GetSurface() noexcept
+{
+    return m_surface;
+}
+
+QueueFamilyIndices &VulkanContext::GetQueueFamilyIndices() noexcept
+{
+    return m_queueFamilyIndices;
+}
+
+SwapChainSupportDetails &VulkanContext::GetSwapChainSupportDetails() noexcept
+{
+    return m_swapChainSupportDetails;
+}
+
+VkQueue VulkanContext::GetPresentQueue() noexcept
+{
+    return m_presentQueue;
+}
+
+VkSurfaceFormatKHR &VulkanContext::GetSwapChainFormat() noexcept
+{
+    return m_swapChainFormat;
+}
+
+VkExtent2D &VulkanContext::GetSwapChainExtent() noexcept
+{
+    return m_swapChainExtent;
+}
+
+VkSwapchainKHR VulkanContext::GetSwapChain() noexcept
+{
+    return m_swapChain;
+}
+
+std::vector<VkImage> &VulkanContext::GetSwapChainImages() noexcept
+{
+    return m_swapChainImages;
+}
+
+std::vector<VkImageView> &VulkanContext::GetSwapChainImageViews() noexcept
+{
+    return m_swapChainImageViews;
+}
+
+VkRenderPass VulkanContext::GetRenderPass() noexcept
+{
+    return m_renderPass;
+}
+
+VkPipelineLayout VulkanContext::GetPipelineLayout() noexcept
+{
+    return m_pipelineLayout;
+}
+
+VkPipeline VulkanContext::GetPipeline() noexcept
+{
+    return m_pipeline;
+}
+
+std::vector<VkFramebuffer> &VulkanContext::GetSwapChainFramebuffers() noexcept
+{
+    return m_swapChainFramebuffers;
+}
+
+VkCommandPool VulkanContext::GetCommandPool() noexcept
+{
+    return m_commandPool;
 }
 
 } // namespace MineClone

@@ -7,6 +7,7 @@
 #define GLFW_INCLUDE_VULKAN
 #include <GLFW/glfw3.h>
 
+#include <array>
 #include <optional>
 #include <vector>
 
@@ -44,13 +45,42 @@ struct SwapChainSupportDetails
     }
 }; // struct SwapChainSupportDetails
 
+class VulkanContext;
+
+struct InFlightFrameData
+{
+  public:
+    VkCommandBuffer CommandBuffer{VK_NULL_HANDLE};
+    VkSemaphore ImageAvailableSemaphore{VK_NULL_HANDLE};
+    VkSemaphore RenderFinishedSemaphore{VK_NULL_HANDLE};
+    VkFence InFlightFence{VK_NULL_HANDLE};
+
+  private:
+    VulkanContext *Context{nullptr};
+
+  public:
+    NON_COPYABLE(InFlightFrameData);
+    NON_MOVABLE(InFlightFrameData);
+
+    InFlightFrameData() = default;
+    ~InFlightFrameData();
+
+    void Initialize(VulkanContext *context);
+
+    void Destroy();
+
+}; // struct InFlightFrameData
+
 class VulkanContext
 {
+  public:
+    static constexpr size_t MAX_FRAMES_IN_FLIGHT = 2;
+
   public:
     NON_COPYABLE(VulkanContext);
     NON_MOVABLE(VulkanContext);
 
-    VulkanContext() = default;
+    VulkanContext();
     ~VulkanContext();
 
   public:
@@ -65,6 +95,20 @@ class VulkanContext
     [[nodiscard]] VkPhysicalDevice GetPhysicalDevice() noexcept;
     [[nodiscard]] VkDevice GetDevice() noexcept;
     [[nodiscard]] VkQueue GetGraphicsQueue() noexcept;
+    [[nodiscard]] VkSurfaceKHR GetSurface() noexcept;
+    [[nodiscard]] QueueFamilyIndices &GetQueueFamilyIndices() noexcept;
+    [[nodiscard]] SwapChainSupportDetails &GetSwapChainSupportDetails() noexcept;
+    [[nodiscard]] VkQueue GetPresentQueue() noexcept;
+    [[nodiscard]] VkSurfaceFormatKHR &GetSwapChainFormat() noexcept;
+    [[nodiscard]] VkExtent2D &GetSwapChainExtent() noexcept;
+    [[nodiscard]] VkSwapchainKHR GetSwapChain() noexcept;
+    [[nodiscard]] std::vector<VkImage> &GetSwapChainImages() noexcept;
+    [[nodiscard]] std::vector<VkImageView> &GetSwapChainImageViews() noexcept;
+    [[nodiscard]] VkRenderPass GetRenderPass() noexcept;
+    [[nodiscard]] VkPipelineLayout GetPipelineLayout() noexcept;
+    [[nodiscard]] VkPipeline GetPipeline() noexcept;
+    [[nodiscard]] std::vector<VkFramebuffer> &GetSwapChainFramebuffers() noexcept;
+    [[nodiscard]] VkCommandPool GetCommandPool() noexcept;
 
   private:
     void CreateInstance();
@@ -107,11 +151,9 @@ class VulkanContext
     VkPipeline m_pipeline{VK_NULL_HANDLE};
     std::vector<VkFramebuffer> m_swapChainFramebuffers{};
     VkCommandPool m_commandPool{VK_NULL_HANDLE};
-    VkCommandBuffer m_commandBuffer{VK_NULL_HANDLE};
-    VkSemaphore m_imageAvailableSemaphore{VK_NULL_HANDLE};
-    VkSemaphore m_renderFinishedSemaphore{VK_NULL_HANDLE};
-    VkFence m_inFlightFence{VK_NULL_HANDLE};
+    std::array<InFlightFrameData, MAX_FRAMES_IN_FLIGHT> m_inFlightFrameData;
 
+    size_t m_currentFrame{0};
 }; // class VulkanInitializer
 
 } // namespace MineClone
