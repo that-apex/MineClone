@@ -24,10 +24,9 @@ void Game::GameLoop()
             break;
         }
 
-        Render();
+        m_vulkanContext.Render();
 
         glfwPollEvents();
-        glfwSwapBuffers(m_glWindow);
     }
 }
 

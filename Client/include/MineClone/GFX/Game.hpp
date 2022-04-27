@@ -14,15 +14,13 @@ class Game
 
     virtual ~Game();
 
-    NON_COPYTABLE(Game);
+    NON_COPYABLE(Game);
     NON_MOVABLE(Game);
 
   public:
     void GameLoop();
 
     void Destroy();
-
-    virtual void Render() = 0;
 
     [[nodiscard]] size_t GetWidth() const noexcept;
     [[nodiscard]] size_t GetHeight() const noexcept;

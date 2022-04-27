@@ -10,7 +10,7 @@
     type(const type &);                                                                                                \
     type &operator=(const type &)
 
-#define NON_COPYTABLE(type)                                                                                            \
+#define NON_COPYABLE(type)                                                                                            \
     type(const type &) = delete;                                                                                       \
     type &operator=(const type &) = delete
 

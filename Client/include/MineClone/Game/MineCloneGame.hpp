@@ -13,7 +13,6 @@ class MineCloneGame : public Game {
   public:
     MineCloneGame();
 
-    void Render() override;
 };
 
 } // namespace MineClone
